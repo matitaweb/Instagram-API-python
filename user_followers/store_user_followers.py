@@ -24,7 +24,7 @@ if __name__ == '__main__':
     username_to_search = bot.account_username
 
     # ricerca da account concorrenza
-    #username_to_search = "almadanza_bologna"
+    #username_to_search = "almadanza_bologna"x
     #username_to_search = "lisa.mazzoni"
     stored = bot.store_all_follower_info(username_to_search)
     bot.write_log("STORED FOLLOWER : " + str(stored))

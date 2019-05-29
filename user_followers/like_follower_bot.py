@@ -3,6 +3,7 @@
 #
 # Use text editor to edit the script and type in valid Instagram username/password
 import sys
+
 sys.path.insert(0, '../InstagramAPI')
 
 from InstagramAPI import InstagramAPI
@@ -69,7 +70,8 @@ class LikeFollowersBot:
         self.media_unliked_dir_path = config.get("DATABASE", "media_unliked_dir_path")
         if not os.path.exists(self.media_unliked_dir_path):
             os.makedirs(self.media_unliked_dir_path)
-        self.media_unliked_already_file_path =config.get("DATABASE", "media_unliked_already_file_path")
+
+        self.media_unliked_already_file_path = config.get("DATABASE", "media_unliked_already_file_path")
         if not os.path.exists(self.media_unliked_already_file_path):
             self.reset_file(self.media_unliked_already_file_path)
 
@@ -81,6 +83,9 @@ class LikeFollowersBot:
         self.follower_store_deep = int(config.get("STORE", "follower_store_deep"))
         self.max_followers_loaded_by_user = int(config.get("STORE", "max_followers_loaded_by_user"))
         self.max_media_loaded_by_user = int(config.get("STORE", "max_media_loaded_by_user"))
+        self.max_following_count = (int(config.get("STORE", "max_following_count")))
+        self.max_follower_count = (int(config.get("STORE", "max_follower_count")))
+        #
 
     def bot_sleep(self, delay_par=None):
 
@@ -94,9 +99,10 @@ class LikeFollowersBot:
         return time_random
 
     def write_log(self, log_text):
+
         if self.log_mod == 0:
             try:
-                print(log_text)
+                self.pretty_print_log_text(log_text)
             except UnicodeEncodeError:
                 print("Your text has unicode problem!")
 
@@ -109,10 +115,16 @@ class LikeFollowersBot:
         elif self.log_mod == 2:
             # Log to log file.
             try:
-                print(log_text)
+                self.pretty_print_log_text(log_text)
                 self.logger.info(log_text)
             except UnicodeEncodeError:
                 print("Your text has unicode problem!")
+
+    def pretty_print_log_text(self, log_text, size=60):
+        now_time = datetime.now()
+        str_now_time = now_time.strftime("%d.%m.%Y_%H:%M")
+        log_text_trim = (log_text[:size] + '..') if len(log_text) > size else log_text
+        print(str_now_time + " - " + str(log_text_trim))
 
     def login_to_instagram(self):
 
@@ -121,12 +133,24 @@ class LikeFollowersBot:
         self.api.login()
         return self.api
 
+    def get_not_yet_liked_user_feed(self, username_id, max_media_loaded_by_user, minTimestamp=None):
+        feeds = self.get_total_user_feed(username_id, max_media_loaded_by_user, minTimestamp)
+        time_sleep = self.bot_sleep()
+        self.write_log("INFO, ... sleep after loaded media: %d sec." % time_sleep)
+        not_yet_liked = [i for i in feeds if i['has_liked'] is not None and i['has_liked'] is False]  # not liked
+        return not_yet_liked
+
+
     def get_total_user_feed(self, username_id, max_media_loaded_by_user, minTimestamp=None):
         user_feed = []
         next_max_id = ''
         while len(user_feed) < max_media_loaded_by_user:
-            self.api.getUserFeed(username_id, next_max_id, minTimestamp)
+            getUserFeed = self.api.getUserFeed(username_id, next_max_id, minTimestamp)
             time.sleep(random.randint(0, 2))  # simulate a scroll app delay
+            if not getUserFeed:
+                self.write_log("ERROR, loading followers, userid: " + str(username_id) + " next_max_id: " + str(next_max_id))
+                break
+
             temp = self.api.LastJson
 
             if 'items' not in temp:
@@ -196,27 +220,129 @@ class LikeFollowersBot:
                 continue
 
             if self.id_exist_in_file(media_to_unlike['pk'], self.media_unliked_already_file_path):
-                self.write_log("INFO, media already unliked " + str(media_to_unlike['caption']))# + ", " + str(self.api.LastJson))
+                self.write_log("INFO, media already unliked " + str(
+                    media_to_unlike['caption']))  # + ", " + str(self.api.LastJson))
                 continue
 
             unlike_action_result = self.api.unlike(media_to_unlike['pk'])
             time_sleep = self.bot_sleep()
             self.write_log("INFO, ... sleep after unlike: %d sec." % time_sleep)
             if unlike_action_result:
-                self.write_log("INFO, unliked media " + str(media_to_unlike['caption']))#+ ", "+ str(self.api.LastJson))
+                self.write_log(
+                    "INFO, unliked media " + str(media_to_unlike['caption']))  # + ", "+ str(self.api.LastJson))
                 unlike_done = unlike_done + 1
                 self.append_id_to_file(media_to_unlike['pk'], self.media_unliked_already_file_path)
 
             else:
                 self.write_log("ERROR, no unliked media " + str(media_to_unlike['caption']) + ", "
                                + str(self.api.LastJson))
-                if "Temporarily Blocked" in self.api.LastJson['feedback_title'] and "fail" in self.api.LastJson['status']:
+                if "Temporarily Blocked" in self.api.LastJson['feedback_title'] and "fail" in self.api.LastJson[
+                    'status']:
                     raise Exception(" unlike Temporarily Blocked")
             if unlike_done > self.max_media_to_unlike:
                 self.write_log("WARN, max unlike after stop: " + str(self.max_media_to_unlike))
                 return unlike_done
 
         return unlike_done
+
+    def like_follower_media_user_recursive(self, username_to_search, deep):
+
+        if deep > self.follower_store_deep:
+            return 0
+
+        user_data = None
+
+        try:
+            user_data = self.load_user_data(username_to_search, load_media=False)
+        except Exception as e:
+            self.write_log("ERROR, load_user_data: " + str(username_to_search) + ", " + str(e))
+            return 0
+
+        followers = user_data['followers']
+        if followers is None:
+            self.write_log("ERROR, loading followers for data: " + str(user_data))
+            return 0
+
+        shuffle(followers)
+        like_done_count = 0
+        for follower in followers:
+            follower_username = follower['username']
+            if follower_username is None:
+                self.write_log("ERROR, None username for data: " + str(user_data))
+                continue
+            try:
+                like_done = self.like_first_media_user(follower_username)
+                like_done_count = like_done_count+like_done
+            except Exception as e:
+                self.write_log("ERROR, like_first_media_user: " + str(follower_username) + ", " + str(e))
+                continue
+
+            try:
+                like_done_deep = self.like_follower_media_user_recursive(follower_username, deep + 1)
+                like_done_count = like_done_count + like_done_deep
+            except Exception as e:
+                self.write_log("ERROR, like_follower_media_user_recursive: " + str(follower_username) + ", " + str(e))
+
+
+        return like_done_count
+
+
+
+    def like_first_media_user(self, username):
+        like_done = 0
+
+        user_info = self.load_user_info(username)
+        if user_info is None:
+            return like_done
+
+        user_pk = user_info['pk']
+
+        if (user_info['follower_count']) > self.max_follower_count:
+            self.write_log("WARN, TO MUCH FOLLOWER (" + str(user_info['follower_count']) + ") " + str(user_info['username']))
+            return like_done
+
+        if (user_info['following_count']) > self.max_following_count:
+            self.write_log("WARN, TO MUCH FOLLOWING (" + str(user_info['following_count']) + ") " +str(user_info['username']))
+            return like_done
+
+
+        date_n_days_ago = datetime.now() - timedelta(days=self.days_before)
+        min_timestamp = int(date_n_days_ago.strftime("%s"))
+        not_yet_liked = self.get_not_yet_liked_user_feed(user_pk, self.max_media_loaded_by_user, minTimestamp=min_timestamp)
+        if not_yet_liked is None:
+            self.write_log("WARN, NO MEDIA TO LIKE FOR " + str(user_info['username']))
+            return 0
+
+        self.write_log("INFO, loaded media for user: " + str(user_info['username']) +
+                       " tot: " + str(len(not_yet_liked)) + " media")
+
+        # select first media to like
+        media_to_like = None
+        for media in not_yet_liked:
+            if self.id_exist_in_file(media['pk'], self.media_liked_already_file_path):
+                continue
+            self.append_id_to_file(media['pk'], self.media_liked_already_file_path)
+            media_to_like = media
+            break
+
+        if media_to_like is None:
+            self.write_log("WARN, all media already liked for : " + str(user_info['username']))
+            return like_done
+
+        like_action_result = self.api.like(media_to_like['pk'])
+        time_sleep = self.bot_sleep()
+        self.write_log("INFO, ... sleep after like: %d sec." % time_sleep)
+        if like_action_result:
+            self.write_log("INFO, liked media " + str(media_to_like['caption']))
+            like_done = 1
+        else:
+            self.write_log("ERROR, no liked media " + str(media_to_like['caption']) + ", "
+                           + str(self.api.LastJson))
+            if "fail" in self.api.LastJson['status'] and "Temporarily Blocked" in self.api.LastJson[
+                'feedback_title']:
+                raise Exception(" like Temporarily Blocked")
+
+        return like_done
 
     def like_follower_media(self):
         like_done = 0
@@ -261,12 +387,13 @@ class LikeFollowersBot:
                 self.write_log("INFO, ... sleep after like: %d sec." % time_sleep)
                 if like_action_result:
                     self.write_log("INFO, liked media " + str(media_to_like['caption']))
-                    like_done = like_done+1
+                    like_done = like_done + 1
                 else:
                     self.write_log("ERROR, no liked media " + str(media_to_like['caption']) + ", "
                                    + str(self.api.LastJson))
-                    if "fail" in self.api.LastJson['status'] and "Temporarily Blocked" in self.api.LastJson['feedback_title']:
-                        raise Exception(" unlike Temporarily Blocked")
+                    if "fail" in self.api.LastJson['status'] and "Temporarily Blocked" in self.api.LastJson[
+                        'feedback_title']:
+                        raise Exception(" like Temporarily Blocked")
 
         return like_done
 
@@ -279,17 +406,16 @@ class LikeFollowersBot:
         if user_info is None:
             return None
 
-        self.write_log("INFO, loaded : "+str(username_to_search)+", id: " + str(user_info['pk']))
+        self.write_log("INFO, loaded : " + str(username_to_search) + ", id: " + str(user_info['pk']))
         user_data['user_info'] = user_info
 
         user_pk = user_info['pk']
         id_exist_in_file = self.id_exist_in_file(user_pk, self.follower_already_stored_file_path)
         user_data["already_stored"] = id_exist_in_file
 
-
         # load followers
         search_user_followers = self.get_total_followers(user_pk, self.max_followers_loaded_by_user)
-        self.write_log("INFO, loaded followers " + str(user_info['username']) + "tot: "
+        self.write_log("INFO, loaded followers " + str(user_info['username']) + " tot: "
                        + str(len(search_user_followers)) + " follower")
         time_sleep = self.bot_sleep()
         self.write_log("INFO, ... sleep after loaded followers: %d sec." % time_sleep)
@@ -303,6 +429,7 @@ class LikeFollowersBot:
 
         # load media not already liked
         if load_media and not id_exist_in_file:
+
             date_n_days_ago = datetime.now() - timedelta(days=self.days_before)
             min_timestamp = int(date_n_days_ago.strftime("%s"))
             feeds = self.get_total_user_feed(user_pk, self.max_media_loaded_by_user, minTimestamp=min_timestamp)
@@ -384,7 +511,7 @@ class LikeFollowersBot:
                         outfile.close()
                         stored = stored + 1
 
-                stored = stored + self.store_all_follower_info_recursive(user_data, deep+1)
+                stored = stored + self.store_all_follower_info_recursive(user_data, deep + 1)
             except Exception as e:
                 self.write_log("ERROR, loading data follower: " + str(follower_username) + ", " + str(e))
 
@@ -439,5 +566,3 @@ class LikeFollowersBot:
                 self.write_log("Unable to open file " + str(file_path) + ", " + str(e))
 
         return False
-
-

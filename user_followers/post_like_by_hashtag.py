@@ -48,11 +48,24 @@ if __name__ == '__main__':
     reportItemList = []
     for item in items:
         user = item['user']
-        reportItem = ReportItem(user, item)
-        #bot.write_log(str(user['username']) + ": (" + str(item['photo_of_you']) +  ") -> " +str(item['like_count']))
+        reportItem = ReportItem(user, item)  # type: ReportItem
+        # bot.write_log(str(user['username']) + ": (" + str(item['photo_of_you']) +  ") -> " +str(item['like_count']))
+        if 'artedanzabologna' == reportItem.username:
+            continue
         reportItemList.append(reportItem)
 
     reportItemList.sort(key=lambda x: x.like_count, reverse=True)
-    bot.write_log(reportItemList)
+    bot.write_log("1. " + str(reportItemList[0]))
+    bot.write_log("2. " +str(reportItemList[1]))
+    bot.write_log("3. " +str(reportItemList[2]))
+    bot.write_log("---------------")
+    bot.write_log("4. " +str(reportItemList[3]))
+    bot.write_log("5. " +str(reportItemList[4]))
+    bot.write_log("6. " +str(reportItemList[5]))
+    bot.write_log("7. " +str(reportItemList[6]))
+    #bot.write_log("8. " +str(reportItemList[7]))
+    #bot.write_log("9. " +str(reportItemList[8]))
+    #bot.write_log("10. " +str(reportItemList[9]))
+    #bot.write_log("11. " +str(reportItemList[10]))
     quit()
 

@@ -4,8 +4,6 @@
 # Use text editor to edit the script and type in valid Instagram username/password
 import sys
 sys.path.insert(0, '../InstagramAPI')
-import time
-import random
 
 import ConfigParser
 from like_follower_bot import LikeFollowersBot
@@ -25,18 +23,11 @@ if __name__ == '__main__':
         bot.write_log("LOGIN ERROR" + str(bot.account_username) + "/" +  str(bot.account_password))
         quit()
 
-    while True:
-        account_username = bot.account_username
-        for i in range(0, 10):
-            try:
-                unlike_done = bot.unlike_media(account_username)
-                bot.write_log(str(i) + " - UNLIKE DONE: " + str(unlike_done))
-                bot.bot_sleep(i)
-            except:
-                bot.write_log("Errore aspetto 1h")
-                time.sleep(3600)  # 1h fermo
+    username_to_search = "almadanza_bologna"
+    like_done = bot.like_follower_media_user_recursive(username_to_search, 1)
+    bot.write_log("LIKE DONE: " + str(like_done))
 
-        time.sleep(3600)  # 1h fermo
 
-    #quit()
+
+    quit()
 

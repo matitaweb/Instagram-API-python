@@ -972,11 +972,15 @@ class InstagramAPI:
                 break
             except Exception as e:
                 print('Except on SendRequest (wait 60 sec and resend): ' + str(e))
-                time.sleep(60)
+                time.sleep(60*random.randint(1, 2))
 
         if response.status_code == 200:
             self.LastResponse = response
-            self.LastJson = json.loads(response.text)
+            try:
+                self.LastJson = json.loads(response.text)
+            except:
+                print ("JSON ERROR on 200: " + response.text)
+                return False
             return True
         else:
             print("Request return " + str(response.status_code) + " error!")
